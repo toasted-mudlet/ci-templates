@@ -1,0 +1,101 @@
+# Lua release workflow: Builds and publishes a versioned LuaRock to GitHub Releases
+
+name: Lua Release
+
+permissions:
+  contents: write
+
+on:
+  workflow_call:
+
+jobs:
+  lua-release:
+    runs-on: ubuntu-latest
+    if: startsWith(github.event.workflow_run.head_branch, 'v')
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+
+      - name: Find rockspec file
+        uses: tj-actions/glob@v22
+        id: rockspec
+        with:
+          files: "*.rockspec"
+
+      - name: Ensure only one rockspec exists
+        run: |
+          count=$(echo "${{ steps.rockspec.outputs.paths }}" | wc -w)
+          if [ "$count" -ne 1 ]; then
+            echo "Error: Expected exactly one .rockspec file, found $count."
+            exit 1
+          fi
+
+      - name: Infer package name from rockspec
+        id: pkg
+        run: |
+          ROCKSPEC="${{ steps.rockspec.outputs.paths }}"
+          PKGNAME=$(echo "$ROCKSPEC" | sed 's/-dev.*//;s/.rockspec$//')
+          echo "PACKAGE_NAME=$PKGNAME" >> $GITHUB_ENV
+
+      - name: Print package name
+        run: |
+          echo "Package name: ${{ env.PACKAGE_NAME }}"
+
+      - name: Extract version from tag
+        id: extract_version
+        run: |
+          TAG="${{ github.event.workflow_run.head_branch }}"
+          if [[ ! "$TAG" =~ ^v[0-9]+(\.[0-9]+)*$ ]]; then
+            echo "Not a tag ref (got '$TAG'), aborting."
+            exit 1
+          fi
+          VERSION="${TAG#v}"
+          echo "TAG=$TAG" >> $GITHUB_ENV
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+          echo "Identified tag: $TAG"
+          echo "Identified version: $VERSION"
+
+      - name: Print version strings
+        run: |
+          echo "Tag string: ${{ env.TAG }}"
+          echo "Version string: ${{ env.VERSION }}"
+
+      - uses: leafo/gh-actions-lua@v11
+      - uses: leafo/gh-actions-luarocks@v4
+
+      - name: Prepare rockspec for release
+        run: |
+          ROCKSPEC="${{ env.PACKAGE_NAME }}-${{ env.VERSION }}-1.rockspec"
+          cp "${{ steps.rockspec.outputs.paths }}" "$ROCKSPEC"
+          sed -i.bak \
+            -e "s/^version *= *\"dev-1\"/version = \"${{ env.VERSION }}-1\"/" \
+            -e "s/^ *tag *= *\"dev-1\"/    tag = \"v${{ env.VERSION }}\"/" \
+            -e "s/^source\.tag *= *\"[^\"]*\"/source.tag = \"v${{ env.VERSION }}\"/" \
+            "$ROCKSPEC"
+          rm -f "$ROCKSPEC.bak"
+
+      - name: Pack rock
+        run: luarocks pack "${{ env.PACKAGE_NAME }}-${{ env.VERSION }}-1.rockspec"
+
+      - name: Create GitHub Release
+        id: create_release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: v${{ env.VERSION }}
+          release_name: Release v${{ env.VERSION }}
+          body: |
+            Automated release for version v${{ env.VERSION }}.
+
+      - name: Upload Release Asset
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ${{ env.PACKAGE_NAME }}-${{ env.VERSION }}-1.src.rock
+          asset_name: ${{ env.PACKAGE_NAME }}-${{ env.VERSION }}-1.src.rock
+          asset_content_type: application/octet-stream
