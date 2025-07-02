@@ -35,6 +35,10 @@ jobs:
           PKGNAME=$(echo "$ROCKSPEC" | sed 's/-dev.*//;s/.rockspec$//')
           echo "PACKAGE_NAME=$PKGNAME" >> $GITHUB_ENV
 
+      - name: Print package name
+        run: |
+          echo "Package name: ${{ env.PACKAGE_NAME }}"
+
       - name: Generate version string
         id: version
         run: |
@@ -50,7 +54,10 @@ jobs:
           DATETIME=$(date -u +"%Y%m%d-%H%M")
           VERSION_STRING="${VERSION}-${HASH}-${DATETIME}"
           echo "VERSION_STRING=$VERSION_STRING" >> $GITHUB_ENV
-          echo "Build version: ${{ env.VERSION_STRING }}"
+
+      - name: Print version string
+        run: |
+          echo "Version string: ${{ env.VERSION_STRING }}"
 
       - name: Set up Lua 5.1
         uses: leafo/gh-actions-lua@v11
