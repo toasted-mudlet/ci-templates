@@ -1,0 +1,51 @@
+# Lua CI workflow: runs linting, testing, and coverage for Lua projects using LuaRocks
+
+name: Lua CI
+
+on:
+  workflow_call:
+
+jobs:
+  lua-ci:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Lua 5.1
+        uses: leafo/gh-actions-lua@v11
+        with:
+          luaVersion: "5.1.5"
+
+      - name: Set up LuaRocks
+        uses: leafo/gh-actions-luarocks@v4
+
+      - name: Install dependencies
+        run: |
+          luarocks install --tree=lua_modules --deps-only *.rockspec
+
+      - name: Install test and coverage tools
+        run: |
+          luarocks install --tree=lua_modules busted
+          luarocks install --tree=lua_modules luacov
+          luarocks install --tree=lua_modules luacheck
+
+      - name: Lint code with luacheck
+        run: ./lua_modules/bin/luacheck .
+
+      - name: Run tests with coverage
+        run: ./lua_modules/bin/busted --coverage .
+
+      - name: Generate coverage report
+        run: ./lua_modules/bin/luacov
+
+      - name: Show coverage report
+        run: cat luacov.report.out
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        with:
+          name: luacov.report.out
+          path: luacov.report.out
