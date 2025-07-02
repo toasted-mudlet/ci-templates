@@ -1,0 +1,71 @@
+# Lua dev snapshot workflow: Sets up lua and luarocks, packs the binary rock and uploads the artifact to GitHub
+
+name: Lua dev snapshot
+
+on:
+  workflow_call:
+
+jobs:
+  lua-dev-snapshot:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Find rockspec file
+        uses: tj-actions/glob@v22
+        id: rockspec
+        with:
+          files: "*.rockspec"
+
+      - name: Ensure only one rockspec exists
+        run: |
+          count=$(echo "${{ steps.rockspec.outputs.paths }}" | wc -w)
+          if [ "$count" -ne 1 ]; then
+            echo "Error: Expected exactly one .rockspec file, found $count."
+            exit 1
+          fi
+
+      - name: Infer package name from rockspec
+        id: pkg
+        run: |
+          ROCKSPEC="${{ steps.rockspec.outputs.paths }}"
+          PKGNAME=$(echo "$ROCKSPEC" | sed 's/-dev.*//;s/.rockspec$//')
+          echo "PACKAGE_NAME=$PKGNAME" >> $GITHUB_ENV
+
+      - name: Generate version string
+        id: version
+        run: |
+          VERSION=""
+          if git describe --tags --exact-match >/dev/null 2>&1; then
+            VERSION=$(git describe --tags --exact-match)
+          elif git describe --tags --abbrev=0 >/dev/null 2>&1; then
+            VERSION=$(git describe --tags --abbrev=0)-dev
+          else
+            VERSION=dev
+          fi
+          HASH=$(git rev-parse --short=6 HEAD)
+          DATETIME=$(date -u +"%Y%m%d-%H%M")
+          VERSION_STRING="${VERSION}-${HASH}-${DATETIME}"
+          echo "VERSION_STRING=$VERSION_STRING" >> $GITHUB_ENV
+          echo "Build version: ${{ env.VERSION_STRING }}"
+
+      - name: Set up Lua 5.1
+        uses: leafo/gh-actions-lua@v11
+        with:
+          luaVersion: "5.1.5"
+
+      - name: Set up LuaRocks
+        uses: leafo/gh-actions-luarocks@v4
+
+      - name: Pack LuaRock
+        run: luarocks make "${{ steps.rockspec.outputs.paths }}" --pack-binary-rock
+
+      - name: Upload dev snapshot artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.PACKAGE_NAME }}-${{ env.VERSION_STRING }}.rock
+          path: ${{ env.PACKAGE_NAME }}-dev-1.*.rock
+          retention-days: 14
