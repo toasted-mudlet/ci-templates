@@ -4,6 +4,12 @@ name: Lua CI
 
 on:
   workflow_call:
+    inputs:
+      lua-version:
+        description: 'Lua version to use (e.g., 5.1.5, 5.2.4, luajit-2.1.0-beta3)'
+        required: false
+        default: '5.1.5'
+        type: string
 
 jobs:
   lua-ci:
@@ -14,10 +20,10 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Set up Lua 5.1
+      - name: Set up Lua
         uses: leafo/gh-actions-lua@v11
         with:
-          luaVersion: "5.1.5"
+          luaVersion: ${{ inputs.lua-version }}
 
       - name: Set up LuaRocks
         uses: leafo/gh-actions-luarocks@v4
@@ -31,6 +37,18 @@ jobs:
           luarocks install --tree=lua_modules busted
           luarocks install --tree=lua_modules luacov
           luarocks install --tree=lua_modules luacheck
+
+      - name: Override luacheck std for current Lua version
+        run: |
+          case "${{ inputs.lua-version }}" in
+            5.1*|luajit*) STD="lua51" ;;
+            5.2*) STD="lua52" ;;
+            5.3*) STD="lua53" ;;
+            5.4*) STD="lua54" ;;
+            *) STD="lua51" ;;
+          esac
+          echo "std = \"$STD\"" >> .luacheckrc
+          echo "Using luacheck std: $STD"
 
       - name: Lint code with luacheck
         run: ./lua_modules/bin/luacheck .
