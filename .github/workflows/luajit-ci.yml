@@ -1,20 +1,20 @@
-# Lua CI workflow: runs linting, testing, and coverage for Lua projects using LuaRocks
-# NOTE: At the time of writing (July 2025), this workflow does not work with LuaJIT due to
-# a LuaJIT limitation loading large LuaRocks manifests.
+# LuaJIT CI workflow: runs linting, testing, and coverage for Lua projects using LuaJIT.
+# Dependencies are installed using Lua 5.1 to work around LuaJIT's manifest size limitation with LuaRocks.
+# Then, tests and tools are executed with the specified LuaJIT version.
 
-name: Lua CI
+name: LuaJIT CI
 
 on:
   workflow_call:
     inputs:
       lua-version:
-        description: 'Lua version to use (e.g., 5.1.5, 5.2.4)'
+        description: 'LuaJIT version to use (e.g., luajit-2.1.0-beta3)'
         required: false
-        default: '5.1.5'
+        default: 'luajit-2.1.0-beta3'
         type: string
 
 jobs:
-  lua-ci:
+  luajit-ci:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -22,35 +22,33 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Set up Lua
+      - name: Set up Lua 5.1 for dependency install
         uses: leafo/gh-actions-lua@v11
         with:
-          luaVersion: ${{ inputs.lua-version }}
+          luaVersion: 5.1.5
 
       - name: Set up LuaRocks
         uses: leafo/gh-actions-luarocks@v4
 
-      - name: Install dependencies
+      - name: Install dependencies (with Lua 5.1)
         run: |
           luarocks install --tree=lua_modules --deps-only *.rockspec
-
-      - name: Install test and coverage tools
-        run: |
           luarocks install --tree=lua_modules busted
           luarocks install --tree=lua_modules luacov
           luarocks install --tree=lua_modules luacheck
 
-      - name: Override luacheck std for current Lua version
+      - name: Set up LuaJIT
+        uses: leafo/gh-actions-lua@v11
+        with:
+          luaVersion: ${{ inputs.lua-version }}
+
+      - name: Set up LuaRocks for LuaJIT (for correct environment)
+        uses: leafo/gh-actions-luarocks@v4
+
+      - name: Override luacheck std for LuaJIT
         run: |
-          case "${{ inputs.lua-version }}" in
-            5.1*|luajit*) STD="lua51" ;;
-            5.2*) STD="lua52" ;;
-            5.3*) STD="lua53" ;;
-            5.4*) STD="lua54" ;;
-            *) STD="lua51" ;;
-          esac
-          echo "std = \"$STD\"" >> .luacheckrc
-          echo "Using luacheck std: $STD"
+          echo 'std = "lua51"' >> .luacheckrc
+          echo "Using luacheck std: lua51"
 
       - name: Lint code with luacheck
         run: ./lua_modules/bin/luacheck .
